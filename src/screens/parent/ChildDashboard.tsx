@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react';
-import { LAND_LINES } from '../../audio/lines';
 import { recordingChecklistCsv, requiredClips } from '../../audio/files';
 import { getManifest, loadManifest, say } from '../../audio/player';
-import { allLessons, type Language, tracks } from '../../curriculum';
-import { stageHasContent } from '../../engine/lessonPlan';
-import { graphemesLearned, lastSevenDays, soundsToPractise, wordsBuilt } from '../../engine/progress';
+import { allLessons, allStories, LAND_NAMES, track } from '../../curriculum';
+import { LAST_STAGE } from '../../engine/lessonPlan';
+import { graphemesLearned, lastSevenDays, soundForKey, soundsToPractise, trickyWordsLearned, wordsBuilt } from '../../engine/progress';
 import { Icon } from '../../components/Icon';
 import { Avatar, AVATAR_IDS } from '../../components/ui';
 import { navigate } from '../../router';
-import { deleteProfile, renameProfile, selectProfile, setLanguage, setStage, setVolume } from '../../store/actions';
+import { deleteProfile, renameProfile, selectProfile, setStage, setVolume } from '../../store/actions';
 import { useAppState } from '../../store/store';
-import { LANGUAGE_LABELS, ParentShell } from './ParentShell';
+import { ParentShell } from './ParentShell';
 
 const card = 'rounded-lg bg-surface-container-low p-space-md shadow-sm';
 
@@ -19,6 +18,8 @@ export function ChildDashboard({ profileId }: { profileId: string }) {
   const volume = useAppState((s) => s.settings.volume);
   const [manifestLoaded, setManifestLoaded] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [copied, setCopied] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   useEffect(() => {
     loadManifest().then(() => setManifestLoaded(true));
@@ -30,23 +31,23 @@ export function ChildDashboard({ profileId }: { profileId: string }) {
 
   if (!profile) return null;
 
-  const language = profile.language;
-  const track = tracks[language];
-  const stageIndex = profile.stage[language];
+  const stageIndex = profile.stage;
   const stage = track.stages[stageIndex];
-  const learned = graphemesLearned(track, profile);
-  const practise = soundsToPractise(profile, language);
+  const learned = graphemesLearned(profile);
+  const trickyLearned = trickyWordsLearned(profile);
+  const storiesRead = allStories().filter((st) => st.id in profile.stories);
+  const practise = soundsToPractise(profile);
   const week = lastSevenDays(profile.playtime);
   const weekMinutes = week.reduce((a, d) => a + d.minutes, 0);
   const maxMinutes = Math.max(10, ...week.map((d) => d.minutes));
   const lessonsDone = stage.lessons.filter((l) => l.id in profile.lessons).length;
 
-  const clips = requiredClips(track);
+  const clips = requiredClips();
   const manifest = getManifest();
-  const recorded = clips.filter((c) => manifest[c.language]?.[c.kind]?.[c.key]).length;
+  const recorded = clips.filter((c) => manifest[c.kind]?.[c.key]).length;
 
   const downloadChecklist = () => {
-    const csv = recordingChecklistCsv([...requiredClips(tracks.en), ...requiredClips(tracks.fr)], manifest);
+    const csv = recordingChecklistCsv(clips, manifest);
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const a = Object.assign(document.createElement('a'), { href: url, download: 'tapi-recording-checklist.csv' });
     a.click();
@@ -75,9 +76,9 @@ export function ChildDashboard({ profileId }: { profileId: string }) {
       {/* Journey */}
       <section className="relative overflow-hidden rounded-lg bg-surface-container p-space-md shadow-[0_8px_20px_-4px_rgba(0,106,62,0.08)]">
         <span className="inline-flex rounded-full bg-primary-fixed px-2.5 py-0.5 text-label-sm text-on-primary-fixed">
-          Stage {stageIndex} of 5 · {LANGUAGE_LABELS[language]}
+          Stage {stageIndex} of 5
         </span>
-        <h2 className="mt-1 text-headline-lg-mobile">{LAND_LINES[stage.land].en}</h2>
+        <h2 className="mt-1 text-headline-lg-mobile">{LAND_NAMES[stage.land]}</h2>
         <p className="text-body-sm text-on-surface-variant">
           {stage.title}. Follows {stage.source}.
           {stage.lessons.length > 0
@@ -90,7 +91,7 @@ export function ChildDashboard({ profileId }: { profileId: string }) {
             <span className="block text-label-sm text-outline">learned so far</span>
           </div>
           <div className="rounded-DEFAULT bg-surface-container-lowest p-3 shadow-sm">
-            <span className="block text-label-lg text-secondary">{wordsBuilt(profile, language)} words</span>
+            <span className="block text-label-lg text-secondary">{wordsBuilt(profile)} words</span>
             <span className="block text-label-sm text-outline">built with tiles</span>
           </div>
         </div>
@@ -105,18 +106,23 @@ export function ChildDashboard({ profileId }: { profileId: string }) {
           ) : (
             <>
               <p className="text-label-sm text-on-surface-variant">Tap a sound to hear it the way Tapi says it.</p>
-              <div className="grid grid-cols-6 gap-2">
-                {learned.map((g) => (
-                  <button
-                    key={g}
-                    type="button"
-                    aria-label={`Play sound ${g}`}
-                    onClick={() => say.sound(track, track.graphemeSounds[g] ?? g)}
-                    className="clay h-12 rounded-DEFAULT bg-surface-container-lowest font-display text-headline-md text-primary [--clay-depth:3px]"
-                  >
-                    {g}
-                  </button>
-                ))}
+              <div className="flex flex-wrap gap-2">
+                {learned.map((key) => {
+                  const g = track.graphemes[key];
+                  // A second sound for a spelling ("oo" in book) is labelled with its example word.
+                  const label = key.includes(':') ? `${g.grapheme} (${g.example})` : g.grapheme;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      aria-label={`Play sound ${label}`}
+                      onClick={() => say.sound(g.sound)}
+                      className="clay h-12 min-w-12 rounded-DEFAULT bg-surface-container-lowest px-2 font-display text-headline-md text-primary [--clay-depth:3px]"
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}
@@ -129,7 +135,7 @@ export function ChildDashboard({ profileId }: { profileId: string }) {
                     key={g}
                     type="button"
                     aria-label={`Play sound ${g}`}
-                    onClick={() => say.sound(track, track.graphemeSounds[g] ?? g)}
+                    onClick={() => say.sound(soundForKey(g))}
                     className="rounded-DEFAULT bg-surface-container-lowest px-3.5 py-1 font-display text-body-lg text-tertiary shadow-[0_2px_0_#bdcabe]"
                   >
                     {g}
@@ -142,6 +148,37 @@ export function ChildDashboard({ profileId }: { profileId: string }) {
               </p>
             </div>
           )}
+        </div>
+      </section>
+
+      {/* Tricky words and stories */}
+      <section className="space-y-space-sm">
+        <h3 className="px-1 text-headline-md">Tricky words and stories</h3>
+        <div className={`${card} space-y-space-sm`}>
+          {trickyLearned.length === 0 ? (
+            <p className="text-body-sm text-on-surface-variant">
+              Tricky words (like &quot;the&quot; and &quot;was&quot;) appear here once they come up in lessons.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {trickyLearned.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  aria-label={`Hear ${t}`}
+                  onClick={() => say.word(t)}
+                  className="rounded-DEFAULT bg-secondary-fixed px-3 py-1 text-body-lg text-on-secondary-fixed"
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="text-body-sm text-on-surface-variant">
+            {storiesRead.length === 0
+              ? 'No stories read yet. Each island ends with one.'
+              : `Stories read: ${storiesRead.map((st) => st.title).join(', ')}.`}
+          </p>
         </div>
       </section>
 
@@ -182,36 +219,13 @@ export function ChildDashboard({ profileId }: { profileId: string }) {
         <h3 className="px-1 text-headline-md">Settings</h3>
         <div className={`${card} space-y-space-md`}>
           <div className="space-y-2">
-            <span className="block text-label-md">Learning language</span>
-            <div
-              className="grid grid-cols-2 gap-1 rounded-DEFAULT bg-surface-container-highest p-1"
-              role="radiogroup"
-              aria-label="Learning language"
-            >
-              {(Object.keys(LANGUAGE_LABELS) as Language[]).map((lang) => (
-                <button
-                  key={lang}
-                  type="button"
-                  role="radio"
-                  aria-checked={language === lang}
-                  onClick={() => setLanguage(profile.id, lang)}
-                  className={`rounded-DEFAULT py-2 text-label-md ${language === lang ? 'bg-surface-container-lowest shadow' : 'text-on-surface-variant'}`}
-                >
-                  {LANGUAGE_LABELS[lang]}
-                </button>
-              ))}
-            </div>
-            <span className="block text-body-sm text-on-surface-variant">Each language keeps its own stage and progress.</span>
-          </div>
-
-          <div className="space-y-2">
             <span className="block text-label-md">Stage</span>
             <div className="flex items-center gap-3">
               <button
                 type="button"
                 aria-label="Move down a stage"
-                disabled={stageIndex <= 0 || !stageHasContent(track, stageIndex - 1)}
-                onClick={() => setStage(profile.id, language, stageIndex - 1)}
+                disabled={stageIndex <= 0}
+                onClick={() => setStage(profile.id, stageIndex - 1)}
                 className="h-12 w-12 rounded-full bg-surface-container-lowest text-headline-md shadow-sm disabled:opacity-40"
               >
                 −
@@ -222,14 +236,28 @@ export function ChildDashboard({ profileId }: { profileId: string }) {
               <button
                 type="button"
                 aria-label="Move up a stage"
-                disabled={stageIndex >= 5 || !stageHasContent(track, stageIndex + 1)}
-                onClick={() => setStage(profile.id, language, stageIndex + 1)}
+                disabled={stageIndex >= LAST_STAGE}
+                onClick={() => setStage(profile.id, stageIndex + 1)}
                 className="h-12 w-12 rounded-full bg-surface-container-lowest text-headline-md shadow-sm disabled:opacity-40"
               >
                 +
               </button>
             </div>
-            <span className="block text-body-sm text-on-surface-variant">Only stages with lessons can be chosen for now.</span>
+            <p className="text-body-sm text-on-surface-variant">
+              {profile.placement
+                ? `The placement game suggested Stage ${profile.placement.stage} on ${new Date(profile.placement.at).toLocaleDateString('en-GB')}.`
+                : 'The placement game hasn’t been played yet.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                selectProfile(profile.id);
+                navigate({ name: 'placement' });
+              }}
+              className="text-label-md text-primary underline underline-offset-4"
+            >
+              Play the placement game {profile.placement ? 'again' : 'now'}
+            </button>
           </div>
 
           <label className="block space-y-2">
@@ -269,38 +297,75 @@ export function ChildDashboard({ profileId }: { profileId: string }) {
       <section className="space-y-space-sm">
         <h3 className="px-1 text-headline-md">Recordings</h3>
         <div className={`${card} space-y-space-sm`}>
-          <p className="text-body-md">
-            {manifestLoaded ? `${recorded} of ${clips.length}` : '…'} {LANGUAGE_LABELS[language]} recordings are in place.
-          </p>
+          <p className="text-body-md">{manifestLoaded ? `${recorded} of ${clips.length}` : '…'} recordings are in place.</p>
           <p className="text-body-sm text-on-surface-variant">
             Until a sound is recorded by a real voice, Tapi uses this device&apos;s computer voice as a stand-in. Computer voices often add
             an extra &quot;uh&quot; to short sounds, so they are fine for testing but not for children.
           </p>
-          <button
-            type="button"
-            onClick={downloadChecklist}
-            className="inline-flex items-center gap-2 rounded-full bg-secondary-fixed px-4 py-2 text-label-md text-on-secondary-fixed active:scale-95"
-          >
-            <Icon name="download" className="h-5 w-5" /> Recording checklist (CSV)
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={downloadChecklist}
+              className="inline-flex items-center gap-2 rounded-full bg-secondary-fixed px-4 py-2 text-label-md text-on-secondary-fixed active:scale-95"
+            >
+              <Icon name="download" className="h-5 w-5" /> Download checklist (CSV)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // Some embedded viewers block downloads; copying works there and pastes into a spreadsheet.
+                navigator.clipboard
+                  .writeText(recordingChecklistCsv(clips, manifest).replace(/","/g, '"\t"'))
+                  .then(() => setCopied('copied'))
+                  .catch(() => setCopied('failed'));
+              }}
+              className="inline-flex items-center gap-2 rounded-full bg-surface-container-high px-4 py-2 text-label-md text-on-surface active:scale-95"
+            >
+              Copy for a spreadsheet
+            </button>
+          </div>
+          {copied !== 'idle' && (
+            <p className="text-body-sm text-on-surface-variant" role="status">
+              {copied === 'copied' ? 'Copied. Paste it into a spreadsheet.' : 'This device didn’t allow copying. Try the download instead.'}
+            </p>
+          )}
           <p className="text-body-sm text-on-surface-variant">
-            {allLessons(track).length} lessons so far. The checklist lists every file to record, what to say and whether it already exists.
+            {allLessons().length} lessons and {allStories().length} stories. The checklist lists every file to record, what to say and
+            whether it already exists.
           </p>
         </div>
       </section>
 
-      <button
-        type="button"
-        onClick={() => {
-          if (window.confirm(`Delete ${profile.name} and all of their progress on this device? This can't be undone.`)) {
-            deleteProfile(profile.id);
-            navigate({ name: 'parent-home' });
-          }
-        }}
-        className="flex items-center gap-2 px-1 text-label-md text-error"
-      >
-        <Icon name="trash" className="h-5 w-5" /> Delete {profile.name}
-      </button>
+      {confirmDelete ? (
+        <div className="space-y-3 rounded-lg bg-error-container p-space-md" role="alertdialog" aria-label={`Delete ${profile.name}?`}>
+          <p className="text-body-md text-on-surface">
+            Delete {profile.name} and all of their progress on this device? This can’t be undone.
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                deleteProfile(profile.id);
+                navigate({ name: 'parent-home' });
+              }}
+              className="rounded-full bg-error px-4 py-2 text-label-md text-white"
+            >
+              Delete {profile.name}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+              className="rounded-full px-4 py-2 text-label-md text-on-surface-variant"
+            >
+              Keep
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" onClick={() => setConfirmDelete(true)} className="flex items-center gap-2 px-1 text-label-md text-error">
+          <Icon name="trash" className="h-5 w-5" /> Delete {profile.name}
+        </button>
+      )}
     </ParentShell>
   );
 }

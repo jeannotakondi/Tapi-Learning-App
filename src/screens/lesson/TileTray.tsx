@@ -1,5 +1,6 @@
 import { type PointerEvent, type RefObject, useMemo, useRef, useState } from 'react';
 import type { Tile } from '../../curriculum';
+import { TileGlyph, tileTextSize } from '../../components/TileGlyph';
 
 export interface TrayTile extends Tile {
   key: string;
@@ -50,6 +51,7 @@ interface Props {
 
 export function TileTray({ wordId, tiles, targetRef, disabled, onPickUp, onDrop, onBounce }: Props) {
   const spots = useMemo(() => spotsFor(wordId, tiles.length), [wordId, tiles.length]);
+  const compact = tiles.length > 5;
   const [drag, setDrag] = useState<{ key: string; dx: number; dy: number } | null>(null);
   const [bouncing, setBouncing] = useState<string | null>(null);
   const start = useRef<{ x: number; y: number; moved: boolean }>({ x: 0, y: 0, moved: false });
@@ -110,7 +112,7 @@ export function TileTray({ wordId, tiles, targetRef, disabled, onPickUp, onDrop,
           >
             <button
               type="button"
-              aria-label={`Sound tile ${tile.grapheme}${tile.silent ? ', silent' : ''}. Press Enter to put it in the glowing space.`}
+              aria-label={`Sound tile ${tile.grapheme}. Press Enter to put it in the glowing space.`}
               disabled={disabled}
               onPointerDown={onPointerDown(tile)}
               onPointerMove={onPointerMove}
@@ -123,17 +125,15 @@ export function TileTray({ wordId, tiles, targetRef, disabled, onPickUp, onDrop,
                   attempt(tile);
                 }
               }}
-              className={`flex h-20 min-w-20 touch-none select-none items-center justify-center rounded-lg px-3 font-display text-[44px] font-bold leading-none ${
-                tile.silent
-                  ? 'bg-surface-container-highest/70 text-outline [--clay-edge:#dcdad5]'
-                  : 'bg-surface-container-lowest text-primary [--clay-edge:#bdcabe]'
-              } ${dragging ? 'cursor-grabbing' : 'clay cursor-grab'} ${bouncing === tile.key ? 'animate-tile-bounce-back' : ''}`}
+              className={`flex touch-none select-none items-center justify-center rounded-lg bg-surface-container-lowest px-3 font-display font-bold leading-none text-primary [--clay-edge:#bdcabe] ${
+                compact ? 'h-16 min-w-16' : 'h-20 min-w-20'
+              } ${tileTextSize(tile.grapheme, compact)} ${dragging ? 'cursor-grabbing' : 'clay cursor-grab'} ${bouncing === tile.key ? 'animate-tile-bounce-back' : ''}`}
               style={{
                 transform: dragging ? `translate(${drag.dx}px, ${drag.dy}px) scale(1.1) rotate(${spot.r}deg)` : `rotate(${spot.r}deg)`,
                 boxShadow: dragging ? '0 18px 25px -5px rgba(0,106,62,0.25), 0 8px 0 #bdcabe' : undefined,
               }}
             >
-              {tile.grapheme}
+              <TileGlyph grapheme={tile.grapheme} />
             </button>
           </div>
         );

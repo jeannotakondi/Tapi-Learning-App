@@ -6,7 +6,9 @@ import { LessonScreen } from './screens/lesson/LessonScreen';
 import { AddChild } from './screens/parent/AddChild';
 import { ChildDashboard } from './screens/parent/ChildDashboard';
 import { ParentHome } from './screens/parent/ParentHome';
+import { PlacementScreen } from './screens/PlacementScreen';
 import { ProfilePicker } from './screens/ProfilePicker';
+import { StoryScreen } from './screens/StoryScreen';
 
 export function App() {
   const route = useRoute();
@@ -25,6 +27,10 @@ export function App() {
       return <IslandMap />;
     case 'lesson':
       return <LessonScreen lessonId={route.lessonId} />;
+    case 'story':
+      return <StoryScreen storyId={route.storyId} />;
+    case 'placement':
+      return <PlacementScreen />;
     case 'parent-home':
       return <ParentHome />;
     case 'parent-new':

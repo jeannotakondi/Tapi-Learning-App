@@ -1,4 +1,4 @@
-import type { Language } from '../curriculum';
+import { LAST_STAGE } from '../engine/lessonPlan';
 import { type AvatarId, type Profile, setState } from './store';
 
 function updateProfile(id: string, update: (p: Profile) => Profile) {
@@ -18,17 +18,17 @@ function newId(): string {
     : `p-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function createProfile(input: { name: string; avatar: AvatarId; language: Language; stage: number }): Profile {
+export function createProfile(input: { name: string; avatar: AvatarId; stage: number }): Profile {
   const profile: Profile = {
     id: newId(),
     name: input.name.trim(),
     avatar: input.avatar,
-    language: input.language,
-    stage: { en: 1, fr: 1, [input.language]: input.stage },
+    stage: input.stage,
     lessons: {},
     words: {},
     misses: {},
-    review: { en: [], fr: [] },
+    review: [],
+    stories: {},
     playtime: {},
     createdAt: new Date().toISOString(),
   };
@@ -52,13 +52,13 @@ export function renameProfile(id: string, name: string, avatar: AvatarId) {
   updateProfile(id, (p) => ({ ...p, name: name.trim() || p.name, avatar }));
 }
 
-export function setLanguage(id: string, language: Language) {
-  updateProfile(id, (p) => ({ ...p, language }));
+/** Grown-ups can move a child up or down a stage at any time. */
+export function setStage(id: string, stage: number) {
+  updateProfile(id, (p) => ({ ...p, stage: Math.max(0, Math.min(LAST_STAGE, stage)) }));
 }
 
-/** Grown-ups can move a child up or down a stage at any time. */
-export function setStage(id: string, language: Language, stage: number) {
-  updateProfile(id, (p) => ({ ...p, stage: { ...p.stage, [language]: Math.max(0, Math.min(5, stage)) } }));
+export function recordPlacement(id: string, stage: number) {
+  updateProfile(id, (p) => ({ ...p, stage, placement: { stage, at: new Date().toISOString() } }));
 }
 
 export function setVolume(volume: number) {
@@ -69,27 +69,22 @@ export function recordWord(id: string, wordId: string, stars: number) {
   updateProfile(id, (p) => ({ ...p, words: { ...p.words, [wordId]: Math.max(stars, p.words[wordId] ?? 0) } }));
 }
 
-export function recordLesson(
-  id: string,
-  language: Language,
-  lessonId: string,
-  stars: number,
-  sessionMisses: Record<string, number>,
-  review: string[],
-) {
+export function recordLesson(id: string, lessonId: string, stars: number, sessionMisses: Record<string, number>, review: string[]) {
   updateProfile(id, (p) => {
     const misses = { ...p.misses };
-    for (const [grapheme, count] of Object.entries(sessionMisses)) {
-      misses[`${language}:${grapheme}`] = (misses[`${language}:${grapheme}`] ?? 0) + count;
-    }
+    for (const [grapheme, count] of Object.entries(sessionMisses)) misses[grapheme] = (misses[grapheme] ?? 0) + count;
     const best = Math.max(stars, p.lessons[lessonId]?.stars ?? 0);
     return {
       ...p,
       misses,
-      review: { ...p.review, [language]: review },
+      review,
       lessons: { ...p.lessons, [lessonId]: { stars: best, completedAt: new Date().toISOString() } },
     };
   });
+}
+
+export function recordStory(id: string, storyId: string) {
+  updateProfile(id, (p) => ({ ...p, stories: { ...p.stories, [storyId]: p.stories[storyId] ?? new Date().toISOString() } }));
 }
 
 export function addPlaytime(id: string, seconds: number, date = new Date()) {

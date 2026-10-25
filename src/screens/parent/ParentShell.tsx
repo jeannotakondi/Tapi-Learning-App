@@ -1,8 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Language } from '../../curriculum';
 import { Icon } from '../../components/Icon';
-
-export const LANGUAGE_LABELS: Record<Language, string> = { en: 'English (UK)', fr: 'Français' };
 
 /** Calm, text-first layout for the grown-up area. */
 export function ParentShell({

@@ -1,8 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { LAND_LINES } from '../audio/lines';
+import { useEffect, useRef, useState } from 'react';
 import { say } from '../audio/player';
-import { type Stage, tracks } from '../curriculum';
-import { nextLessonInStage } from '../engine/lessonPlan';
+import { LAND_NAMES, type Stage, track } from '../curriculum';
+import { nextLessonInStage, nextStep } from '../engine/lessonPlan';
 import { Icon } from '../components/Icon';
 import { Tapi } from '../components/Tapi';
 import { Avatar, BackButton, SpeakerButton, Stars } from '../components/ui';
@@ -31,6 +30,8 @@ function stageStars(stage: Stage, profile: Profile): number {
 export function IslandMap() {
   const profile = useActiveProfile();
   const currentRef = useRef<HTMLDivElement>(null);
+  // Which island's lessons are listed at the top. Finished islands can be revisited.
+  const [viewStage, setViewStage] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (!profile) navigate({ name: 'picker' }, { replace: true });
@@ -42,16 +43,14 @@ export function IslandMap() {
 
   if (!profile) return null;
 
-  const language = profile.language;
-  const track = tracks[language];
-  const currentStage = profile.stage[language];
-  const stage = track.stages[currentStage];
-  const nextLesson = nextLessonInStage(track, currentStage, profile.lessons);
-  const lessonToPlay = nextLesson ?? stage.lessons[stage.lessons.length - 1];
+  const currentStage = profile.stage;
+  const shownStage = track.stages[viewStage ?? currentStage];
+  const step = nextStep(currentStage, profile.lessons, profile.stories);
 
   const play = () => {
-    if (lessonToPlay) navigate({ name: 'lesson', lessonId: lessonToPlay.id });
-    else say.tapi(language, 'land-asleep');
+    if (step.kind === 'lesson') navigate({ name: 'lesson', lessonId: step.lesson.id });
+    else if (step.kind === 'story') navigate({ name: 'story', storyId: step.storyId });
+    else say.tapi('all-done');
   };
 
   return (
@@ -65,42 +64,13 @@ export function IslandMap() {
       <header className="sticky top-0 z-30 -mx-margin-mobile flex items-center justify-between bg-surface/85 px-margin-mobile py-3 backdrop-blur-xl">
         <BackButton label="Change player" onClick={() => navigate({ name: 'picker' })} />
         <div className="pillow flex items-center gap-2 rounded-full bg-surface-container-lowest px-4 py-1.5">
-          <SpeakerButton size="sm" label="Hear the island name" onClick={() => say.land(language, stage.land)} />
-          <span className="font-display text-headline-md text-primary">{LAND_LINES[stage.land][language]}</span>
+          <SpeakerButton size="sm" label="Hear the island name" onClick={() => say.land(shownStage.land)} />
+          <span className="font-display text-headline-md text-primary">{LAND_NAMES[shownStage.land]}</span>
         </div>
         <Avatar id={profile.avatar} className="h-14 w-14 text-3xl" />
       </header>
 
-      {stage.lessons.length > 0 && (
-        <nav aria-label="Lessons on this island" className="pillow mt-2 rounded-lg bg-surface-container-lowest/90 p-3">
-          <ol className="flex flex-wrap justify-center gap-2">
-            {stage.lessons.map((lesson, i) => {
-              const result = profile.lessons[lesson.id];
-              const unlocked = Boolean(result) || lesson.id === nextLesson?.id;
-              return (
-                <li key={lesson.id}>
-                  <button
-                    type="button"
-                    disabled={!unlocked}
-                    aria-label={`Lesson ${i + 1}${result ? `, ${result.stars} stars` : ''}`}
-                    onClick={() => navigate({ name: 'lesson', lessonId: lesson.id })}
-                    className={`flex h-16 w-14 flex-col items-center justify-center rounded-DEFAULT font-display text-headline-md ${
-                      lesson.id === nextLesson?.id
-                        ? 'clay bg-primary-container text-on-primary-container [--clay-depth:4px] [--clay-edge:#00522f]'
-                        : result
-                          ? 'clay bg-primary-fixed text-on-primary-fixed [--clay-depth:4px] [--clay-edge:#74db9d]'
-                          : 'well bg-surface-container text-outline-variant'
-                    }`}
-                  >
-                    {unlocked ? i + 1 : <Icon name="lock" className="h-5 w-5" />}
-                    {result && <Stars count={result.stars} size="h-3 w-3" />}
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        </nav>
-      )}
+      <LessonStrip stage={shownStage} profile={profile} />
 
       <div className="relative mt-6 flex flex-col-reverse items-center gap-space-xl">
         <svg
@@ -128,25 +98,21 @@ export function IslandMap() {
 
         {track.stages.map((s) => {
           const isCurrent = s.index === currentStage;
-          const done = s.index < currentStage;
-          const name = LAND_LINES[s.land][language];
+          const reached = s.index <= currentStage;
+          const name = LAND_NAMES[s.land];
           return (
             <div
               key={s.land}
               ref={isCurrent ? currentRef : undefined}
               className={`relative flex flex-col items-center ${OFFSETS[s.index]}`}
             >
-              {isCurrent && (
-                <div className="-mb-2 flex flex-col items-center">
-                  <Tapi mood="wave" className="h-20 w-20 animate-float" />
-                </div>
-              )}
+              {isCurrent && <Tapi mood="wave" className="-mb-2 h-20 w-20 animate-float" />}
               <div className="mb-1.5 flex items-center gap-2">
                 <SpeakerButton
                   size="sm"
-                  tone={isCurrent ? 'grape' : done ? 'mint' : 'sun'}
+                  tone={isCurrent ? 'grape' : reached ? 'mint' : 'sun'}
                   label={`Hear ${name}`}
-                  onClick={() => say.land(language, s.land)}
+                  onClick={() => say.land(s.land)}
                 />
                 <span
                   className={`rounded-full px-3 py-1 font-display ${isCurrent ? 'pillow bg-surface-container-lowest text-headline-lg-mobile text-primary' : 'bg-surface-container-high text-headline-md text-on-surface-variant'}`}
@@ -160,31 +126,41 @@ export function IslandMap() {
                   <span className="absolute h-36 w-36 animate-ping rounded-full bg-tertiary-fixed/50 [animation-duration:2.6s]" />
                   <button
                     type="button"
-                    aria-label={`Play on ${name}`}
+                    aria-label={step.kind === 'story' ? 'Read the story' : `Play on ${name}`}
                     onClick={play}
                     className="clay relative z-10 flex h-28 w-28 items-center justify-center rounded-full bg-primary-container text-on-primary-container [--clay-depth:8px] [--clay-edge:#00522f]"
                   >
-                    <Icon name="play" className="h-16 w-16" />
+                    {step.kind === 'story' ? (
+                      <span className="text-[52px]" aria-hidden="true">
+                        📖
+                      </span>
+                    ) : (
+                      <Icon name="play" className="h-16 w-16" />
+                    )}
                   </button>
                 </div>
               ) : (
                 <button
                   type="button"
-                  aria-label={done ? `${name}, finished` : `${name}, not open yet`}
-                  onClick={() => (done ? say.land(language, s.land) : say.tapi(language, 'land-asleep'))}
+                  aria-label={reached ? `${name}, finished. Show its lessons` : `${name}, not open yet`}
+                  aria-pressed={reached ? viewStage === s.index : undefined}
+                  onClick={() => {
+                    say.land(s.land);
+                    if (reached) setViewStage(s.index);
+                  }}
                   className={`relative flex h-24 w-24 items-center justify-center rounded-full text-5xl ${
-                    done ? 'clay bg-primary-fixed [--clay-edge:#74db9d]' : 'well bg-surface-container-highest opacity-75 grayscale'
-                  }`}
+                    reached ? 'clay bg-primary-fixed [--clay-edge:#74db9d]' : 'well bg-surface-container-highest opacity-75 grayscale'
+                  } ${viewStage === s.index ? 'ring-4 ring-secondary' : ''}`}
                 >
                   {LAND_ART[s.land]}
                   <span
-                    className={`absolute -bottom-2 flex h-8 w-8 items-center justify-center rounded-full shadow-md ${done ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container text-outline'}`}
+                    className={`absolute -bottom-2 flex h-8 w-8 items-center justify-center rounded-full shadow-md ${reached ? 'bg-primary-container text-on-primary-container' : 'bg-surface-container text-outline'}`}
                   >
-                    <Icon name={done ? 'check' : 'lock'} className="h-4 w-4" />
+                    <Icon name={reached ? 'check' : 'lock'} className="h-4 w-4" />
                   </span>
                 </button>
               )}
-              {s.lessons.length > 0 && (
+              {reached && (
                 <div className="mt-2">
                   <Stars count={stageStars(s, profile)} size={isCurrent ? 'h-6 w-6' : 'h-5 w-5'} />
                 </div>
@@ -194,5 +170,62 @@ export function IslandMap() {
         })}
       </div>
     </main>
+  );
+}
+
+/** Numbered pebbles for the island's lessons, then a book for its story. */
+function LessonStrip({ stage, profile }: { stage: Stage; profile: Profile }) {
+  const isPast = stage.index < profile.stage;
+  const next = nextLessonInStage(stage.index, profile.lessons);
+  const allLessonsDone = !next;
+  const storyUnlocked = Boolean(stage.story) && (isPast || allLessonsDone || stage.story!.id in profile.stories);
+
+  return (
+    <nav aria-label={`Lessons on ${LAND_NAMES[stage.land]}`} className="pillow mt-2 rounded-lg bg-surface-container-lowest/90 p-3">
+      <ol className="flex flex-wrap justify-center gap-2">
+        {stage.lessons.map((lesson, i) => {
+          const result = profile.lessons[lesson.id];
+          const isNext = lesson.id === next?.id && stage.index === profile.stage;
+          const unlocked = Boolean(result) || isNext || isPast;
+          return (
+            <li key={lesson.id}>
+              <button
+                type="button"
+                disabled={!unlocked}
+                aria-label={`Lesson ${i + 1}${result ? `, ${result.stars} stars` : ''}`}
+                onClick={() => navigate({ name: 'lesson', lessonId: lesson.id })}
+                className={`flex h-16 w-14 flex-col items-center justify-center rounded-DEFAULT font-display text-headline-md ${
+                  isNext
+                    ? 'clay bg-primary-container text-on-primary-container [--clay-depth:4px] [--clay-edge:#00522f]'
+                    : unlocked
+                      ? 'clay bg-primary-fixed text-on-primary-fixed [--clay-depth:4px] [--clay-edge:#74db9d]'
+                      : 'well bg-surface-container text-outline-variant'
+                }`}
+              >
+                {unlocked ? i + 1 : <Icon name="lock" className="h-5 w-5" />}
+                {result && <Stars count={result.stars} size="h-3 w-3" />}
+              </button>
+            </li>
+          );
+        })}
+        {stage.story && (
+          <li>
+            <button
+              type="button"
+              disabled={!storyUnlocked}
+              aria-label={`Story: ${stage.story.title}${stage.story.id in profile.stories ? ', read' : ''}`}
+              onClick={() => navigate({ name: 'story', storyId: stage.story!.id })}
+              className={`flex h-16 w-14 items-center justify-center rounded-DEFAULT text-[30px] ${
+                storyUnlocked
+                  ? 'clay bg-secondary-fixed [--clay-depth:4px] [--clay-edge:#d1bcff]'
+                  : 'well bg-surface-container opacity-60 grayscale'
+              }`}
+            >
+              📖
+            </button>
+          </li>
+        )}
+      </ol>
+    </nav>
   );
 }

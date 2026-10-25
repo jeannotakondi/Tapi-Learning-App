@@ -6,3 +6,4 @@ coverage
 .DS_Store
 # Mood-board images stored in Stitch; ownership unconfirmed, so kept out of git
 design/stitch/ref-*
+dist-artifact

@@ -1,10 +1,9 @@
-import { LAND_LINES } from '../../audio/lines';
-import { tracks } from '../../curriculum';
+import { LAND_NAMES, track } from '../../curriculum';
 import { Icon } from '../../components/Icon';
 import { Avatar } from '../../components/ui';
 import { navigate } from '../../router';
 import { useAppState } from '../../store/store';
-import { LANGUAGE_LABELS, ParentShell } from './ParentShell';
+import { ParentShell } from './ParentShell';
 
 export function ParentHome() {
   const profiles = useAppState((s) => s.profiles);
@@ -20,8 +19,7 @@ export function ParentHome() {
         )}
         <ul className="space-y-space-sm">
           {profiles.map((p) => {
-            const stage = p.stage[p.language];
-            const land = tracks[p.language].stages[stage].land;
+            const land = track.stages[p.stage].land;
             return (
               <li key={p.id}>
                 <button
@@ -33,7 +31,7 @@ export function ParentHome() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-label-lg">{p.name}</span>
                     <span className="block text-body-sm text-on-surface-variant">
-                      {LANGUAGE_LABELS[p.language]} · Stage {stage}: {LAND_LINES[land].en}
+                      Stage {p.stage}: {LAND_NAMES[land]}
                     </span>
                   </span>
                   <Icon name="next" className="h-5 w-5 text-outline" />

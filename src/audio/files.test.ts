@@ -1,31 +1,38 @@
 import { describe, expect, it } from 'vitest';
-import { tracks } from '../curriculum';
-import { recordingChecklistCsv, requiredClips, wordFileKey } from './files';
+import { exampleFileKey, fileKey, recordingChecklistCsv, requiredClips } from './files';
 
 describe('audio files', () => {
-  it('gives accented words safe, distinct file names', () => {
-    expect(wordFileKey({ text: 'élu' })).toBe('e_acutelu');
-    expect(wordFileKey({ text: 'ré' })).not.toBe(wordFileKey({ text: 're' }));
-    expect(wordFileKey({ text: 'cat' })).toBe('cat');
+  it('gives every recording a distinct, safe file name', () => {
+    const clips = requiredClips();
+    const paths = clips.map((c) => `${c.kind}/${c.key}`);
+    expect(new Set(paths).size).toBe(paths.length);
+    for (const c of clips) expect(c.key).toMatch(/^[a-z0-9_-]+$/);
   });
 
-  it('has no clashing file names within a set', () => {
-    for (const track of Object.values(tracks)) {
-      const clips = requiredClips(track);
-      const paths = clips.map((c) => `${c.kind}/${c.key}`);
-      expect(new Set(paths).size).toBe(paths.length);
-    }
+  it('keeps intro words apart from lesson words', () => {
+    expect(exampleFileKey('oo:oo_short')).toBe('example-oo_oo_short');
+    expect(fileKey('Mr')).toBe('mr');
   });
 
   it('lists one sound recording per sound, not per spelling', () => {
-    const sounds = requiredClips(tracks.en).filter((c) => c.kind === 'sounds');
-    expect(sounds.map((s) => s.key)).toContain('k');
-    expect(sounds.map((s) => s.key)).not.toContain('ck');
+    const sounds = requiredClips()
+      .filter((c) => c.kind === 'sounds')
+      .map((s) => s.key);
+    expect(sounds).toContain('k');
+    expect(sounds).not.toContain('ck');
+    expect(sounds).toContain('oo_short');
+  });
+
+  it('includes tricky words, listening game words and story pages', () => {
+    const keys = requiredClips().map((c) => `${c.kind}/${c.key}`);
+    expect(keys).toContain('words/the');
+    expect(keys).toContain('words/butterfly');
+    expect(keys).toContain('stories/story-1-p1');
   });
 
   it('marks what is already recorded in the checklist', () => {
-    const clips = requiredClips(tracks.en).slice(0, 2);
-    const csv = recordingChecklistCsv(clips, { en: { sounds: { s: 's.mp3' } } });
+    const clips = requiredClips().slice(0, 2);
+    const csv = recordingChecklistCsv(clips, { sounds: { s: 's.mp3' } });
     expect(csv.split('\n')[1]).toContain('"yes"');
     expect(csv.split('\n')[2]).toContain('"no"');
   });
