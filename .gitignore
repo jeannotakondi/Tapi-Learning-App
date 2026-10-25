@@ -1,0 +1,8 @@
+node_modules
+dist
+dev-dist
+coverage
+*.log
+.DS_Store
+# Mood-board images stored in Stitch; ownership unconfirmed, so kept out of git
+design/stitch/ref-*
